@@ -71,6 +71,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 func getSshConf() {
 	ai, err := newAnsibleInventory()
 	if err != nil {
@@ -93,7 +94,7 @@ func getSshConf() {
 		GW:     natHostIp,
 		GWPort: args.SshPort,
 	}
-	t, err := template.New("todos").Parse("Host *\n  User={{ .User }}\n  ProxyCommand=ssh -q -W %h:%p {{ .User }}@{{ .GW }} -p{{ .GWPort }}\n")
+	t, err := template.New("todos").Parse("Host *\n  User={{ .User }}\n  ProxyCommand=ssh -o StrictHostKeyChecking=no -q -W %h:%p {{ .User }}@{{ .GW }} -p{{ .GWPort }}\n")
 	if err != nil {
 		log.Fatal(err)
 	}
