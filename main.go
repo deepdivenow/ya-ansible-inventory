@@ -2,25 +2,32 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/yandex-cloud/go-genproto/yandex/cloud/iam/v1"
 	"log"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	ycsdk "github.com/yandex-cloud/go-sdk"
+	"github.com/yandex-cloud/ydb-go-sdk"
+	"github.com/yandex-cloud/ydb-go-sdk/table"
 )
 
 var (
 	instancePerPage int64 = 256
 	args            argsT
 	errNat          = errors.New("Nat IP not found")
+	errEnv = errors.New("Env variable not set")
 )
 
 type argsT struct {
@@ -30,6 +37,7 @@ type argsT struct {
 	SshUser     string
 	SshPort     int
 	SshNatGroup string
+	Db bool
 }
 
 type sshConf struct {
@@ -51,6 +59,7 @@ func main() {
 	flag.BoolVar(&args.List, "list", false, "List inventory")
 	flag.StringVar(&args.Host, "host", "", "Get Host vars")
 	flag.BoolVar(&args.Ssh, "ssh", false, "Get ssh.conf")
+	flag.BoolVar(&args.Db, "db", false, "DB control")
 	flag.StringVar(&args.SshUser, "ssh-user", "cloud-user", "Set user for ssh.conf")
 	flag.StringVar(&args.SshNatGroup, "ssh-nat-group", "nat", "Set nat group for ssh.conf")
 	flag.IntVar(&args.SshPort, "ssh-port", 22, "Set GW port for ssh.conf")
@@ -62,6 +71,8 @@ func main() {
 			log.Fatal(err)
 		}
 		ai.print()
+	} else if args.Db {
+		newDBs()
 	} else if args.Ssh {
 		getSshConf()
 	} else if len(args.Host) > 0 {
@@ -112,17 +123,25 @@ func (ai *ansibleInventory) print() {
 	fmt.Print(string(prepareBytes))
 }
 
-func newAnsibleInventory() (ansibleInventory, error) {
-	envLabels := []string{"YC_TOKEN", "FOLDER_ID", "WORKSPACE"}
+func checkEnvs(envLabels []string) (map[string]string,error){
+
 	envs := map[string]string{}
 	for _, e := range envLabels {
 		envValue := os.Getenv(e)
 		if len(envValue) < 1 {
-			log.Fatal("You must set this ENVs: ", strings.Join(envLabels, ", "))
+			return nil, errEnv
 		}
 		envs[e] = envValue
 	}
+	return envs,nil
+}
 
+func newAnsibleInventory() (ansibleInventory, error) {
+	envLabels := []string{"YC_TOKEN", "FOLDER_ID", "WORKSPACE"}
+	envs,err:=checkEnvs(envLabels)
+	if err != nil {
+		log.Fatal("You must set this ENVs: ", strings.Join(envLabels, ", "))
+	}
 	ctx := context.Background()
 
 	sdk, err := ycsdk.Build(ctx, ycsdk.Config{
@@ -242,3 +261,162 @@ func getInstances(ctx context.Context, sdk *ycsdk.SDK, folderID string) ([]*comp
 	}
 	return instances, nil
 }
+
+func getIAM() (string,error) {
+	envLabels := []string{"YC_TOKEN"}
+	envs,err:=checkEnvs(envLabels)
+	if err != nil {
+		log.Fatal("You must set this ENVs: ", strings.Join(envLabels, ", "))
+	}
+	ctx := context.Background()
+
+	sdk, err := ycsdk.Build(ctx, ycsdk.Config{
+		Credentials: ycsdk.OAuthToken(envs["YC_TOKEN"]),
+	})
+	if err != nil {
+		return "",err
+	}
+	responce,err:=sdk.IAM().IamToken().Create(ctx,&iam.CreateIamTokenRequest{Identity: &iam.CreateIamTokenRequest_YandexPassportOauthToken{YandexPassportOauthToken: envs["YC_TOKEN"]}})
+	return responce.IamToken,err
+}
+
+func newDBs() error {
+	ctx:=context.Background()
+	iamToken,err := getIAM()
+	if err != nil {
+		log.Fatal(err)
+	}
+	dbPath := "/ru-central1/b1gkhnudnlgr0ek88c5t/etn012c5v78f3ratmu5n"
+	dialer := &ydb.Dialer{
+		DriverConfig: &ydb.DriverConfig{
+			Database: dbPath,
+			Credentials: ydb.AuthTokenCredentials{
+				AuthToken: iamToken,
+			},
+		},
+		TLSConfig:    &tls.Config{/*...*/},
+		Timeout:      time.Second,
+	}
+	driver, err := dialer.Dial(ctx, "ydb.serverless.yandexcloud.net:2135")
+	if err != nil {
+		log.Fatal(err)
+	}
+	tc := table.Client{
+		Driver: driver,
+	}
+	s, err := tc.CreateSession(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer s.Close(ctx)
+	err = s.CreateTable(ctx,path.Join(dbPath,"main"),
+		table.WithColumn("id",ydb.Optional(ydb.TypeUint32)),
+		table.WithColumn("name",ydb.Optional(ydb.TypeString)),
+		table.WithColumn("net_id",ydb.Optional(ydb.TypeUint32)),
+		table.WithColumn("create_date",ydb.Optional(ydb.TypeTimestamp)),
+		table.WithColumn("update_date",ydb.Optional(ydb.TypeTimestamp)),
+		table.WithColumn("state",ydb.Optional(ydb.TypeString)),
+		table.WithPrimaryKeyColumn("id"),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_,res,err:=s.Execute(ctx,nil,"select 1")
+	println(res)
+
+
+//	INSERT INTO episodes
+//	(
+//		series_id,
+//		season_id,
+//		episode_id,
+//		title,
+//		air_date
+//	)
+//	VALUES
+//	(
+//		2,
+//		5,
+//		21,
+//		"Test 21",
+//		CAST(Date("2018-08-27") AS Uint64)
+//)
+//	;
+	return nil
+}
+//
+//func render(t *template.Template, data interface{}) string {
+//	var buf bytes.Buffer
+//	err := t.Execute(&buf, data)
+//	if err != nil {
+//		panic(err)
+//	}
+//	return buf.String()
+//}
+//
+//func selectSimple(ctx context.Context, sp *table.SessionPool, prefix string) (err error) {
+//	query := render(
+//		template.Must(template.New("").Parse(`
+//			PRAGMA TablePathPrefix("{{ .TablePathPrefix }}");
+//			DECLARE $seriesID AS Uint64;
+//			$format = DateTime::Format("%Y-%m-%d");
+//			SELECT
+//				series_id,
+//				title,
+//				$format(DateTime::FromSeconds(CAST(DateTime::ToSeconds(DateTime::IntervalFromDays(CAST(release_date AS Int16))) AS Uint32))) AS release_date
+//			FROM
+//				series
+//			WHERE
+//				series_id = $seriesID;
+//		`)),
+//		templateConfig{
+//			TablePathPrefix: prefix,
+//		},
+//	)
+//	readTx := table.TxControl(
+//		table.BeginTx(
+//			table.WithOnlineReadOnly(),
+//		),
+//		table.CommitTx(),
+//	)
+//	var res *table.Result
+//	err = table.Retry(ctx, sp,
+//		table.OperationFunc(func(ctx context.Context, s *table.Session) (err error) {
+//			_, res, err = s.Execute(ctx, readTx, query,
+//				table.NewQueryParameters(
+//					table.ValueParam("$seriesID", ydb.Uint64Value(1)),
+//				),
+//				table.WithQueryCachePolicy(
+//					table.WithQueryCachePolicyKeepInCache(),
+//				),
+//				table.WithCollectStatsModeBasic(),
+//			)
+//			return
+//		}),
+//	)
+//	if err != nil {
+//		return err
+//	}
+//	for res.NextSet() {
+//		for res.NextRow() {
+//			res.SeekItem("series_id")
+//			id := res.OUint64()
+//
+//			res.NextItem()
+//			title := res.OUTF8()
+//
+//			res.NextItem()
+//			date := res.OString()
+//
+//			log.Printf(
+//				"\n> select_simple_transaction: %d %s %s",
+//				id, title, date,
+//			)
+//		}
+//	}
+//	if err := res.Err(); err != nil {
+//		return err
+//	}
+//	return nil
+//}
