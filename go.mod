@@ -1,4 +1,4 @@
-module github.com/deepdivenow/ya-ansible-inventory
+module ya-ansible-inventory
 
 go 1.15
 
