@@ -33,6 +33,7 @@ type WsRow struct {
 	CreateDate time.Time `json:"create_date"`
 	UpdateDate time.Time `json:"update_date"`
 	State      string    `json:"state"`
+	HaMode     bool      `json:"ha_mode"`
 }
 
 func (y *YDBConn) Close() {
@@ -118,12 +119,12 @@ func (y *YDBConn) CreateTable() error {
 	}
 	session := y.GetSession()
 	err = session.CreateTable(y.CTX, path.Join(dbPath, y.TableName),
-		//table.WithColumn("id", ydb.Optional(ydb.TypeUint32)),
 		table.WithColumn("name", ydb.Optional(ydb.TypeString)),
 		table.WithColumn("net_id", ydb.Optional(ydb.TypeUint32)),
 		table.WithColumn("create_date", ydb.Optional(ydb.TypeTimestamp)),
 		table.WithColumn("update_date", ydb.Optional(ydb.TypeTimestamp)),
 		table.WithColumn("state", ydb.Optional(ydb.TypeString)),
+		table.WithColumn("ha_mode", ydb.Optional(ydb.TypeBool)),
 		table.WithPrimaryKeyColumn("name"),
 	)
 	return err
@@ -136,14 +137,14 @@ func (y *YDBConn) Insert(r WsRow) error {
 		),
 		table.CommitTx(),
 	)
-	q := fmt.Sprintf("INSERT INTO %s (name,net_id,state,create_date,update_date) values(%q, %d,%q,DateTime::FromSeconds(%d),DateTime::FromSeconds(%d)) ;",
-		y.TableName, r.Name, r.NetId, r.State, r.CreateDate.Unix(), r.UpdateDate.Unix())
+	q := fmt.Sprintf("INSERT INTO %s (name,net_id,state,ha_mode,create_date,update_date) values(%q, %d,%q,%v,DateTime::FromSeconds(%d),DateTime::FromSeconds(%d)) ;",
+		y.TableName, r.Name, r.NetId, r.State, r.HaMode, r.CreateDate.Unix(), r.UpdateDate.Unix())
 	sess := y.GetSession()
 	_, _, err := sess.Execute(y.CTX, writeTx, q, nil)
 	return err
 }
 
-func mapToQuery(m map[string]interface{}, spliter string) string{
+func mapToQuery(m map[string]interface{}, spliter string) string {
 	result := ""
 	for k, v := range m {
 		if len(result) > 0 {
@@ -159,20 +160,19 @@ func mapToQuery(m map[string]interface{}, spliter string) string{
 	return result
 }
 
-func (y *YDBConn) Set(sf map[string]interface{}, w map[string]interface{}) (error) {
+func (y *YDBConn) Set(sf map[string]interface{}, w map[string]interface{}) error {
 	writeTx := table.TxControl(
 		table.BeginTx(
 			table.WithSerializableReadWrite(),
 		),
 		table.CommitTx(),
 	)
-	setString := mapToQuery(sf,", ")
-	where := mapToQuery(w," AND ")
+	setString := mapToQuery(sf, ", ")
+	where := mapToQuery(w, " AND ")
 	q := fmt.Sprintf("UPDATE %s SET update_date = DateTime::FromSeconds(%d), %s  WHERE %s ;",
 		y.TableName, time.Now().Unix(), setString, where)
 	sess := y.GetSession()
 	_, _, err := sess.Execute(y.CTX, writeTx, q, nil)
-
 
 	return err
 }
@@ -186,7 +186,7 @@ func (y *YDBConn) Select(w map[string]interface{}) (*[]WsRow, error) {
 		table.CommitTx(),
 	)
 	sess := y.GetSession()
-	where := mapToQuery(w," AND ")
+	where := mapToQuery(w, " AND ")
 	q := ""
 	if len(where) > 0 {
 		q = fmt.Sprintf("SELECT name,net_id,state,create_date,update_date FROM %s WHERE %s ;", y.TableName, where)

@@ -26,7 +26,7 @@ var (
 	errNat          = errors.New("Nat IP not found")
 	errEnv          = errors.New("Env variable not set")
 	errDBnotFound   = errors.New("Database not found")
-	errSetState = errors.New("Set state. Must set ws Name and ws State")
+	errSetState     = errors.New("Set state. Must set ws Name and ws State")
 )
 
 type argsT struct {
@@ -90,7 +90,7 @@ func main() {
 	}
 }
 
-func prepareDB () workspaces.YDBConn  {
+func prepareDB() workspaces.YDBConn {
 	db, err := getDB()
 	if err != nil {
 		log.Fatal(err)
@@ -111,7 +111,7 @@ func prepareDB () workspaces.YDBConn  {
 func dbList() {
 	ws := prepareDB()
 	defer ws.Close()
-	r, _ := ws.Select( nil )
+	r, _ := ws.Select(nil)
 	prepareBytes, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		log.Fatal(err)
@@ -125,9 +125,9 @@ func dbCreate(j string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	inRow.State="creating"
-	inRow.CreateDate=time.Now()
-	inRow.UpdateDate=time.Now()
+	inRow.State = "creating"
+	inRow.CreateDate = time.Now()
+	inRow.UpdateDate = time.Now()
 	ws := prepareDB()
 	defer ws.Close()
 	err = ws.CreateTable()
@@ -145,17 +145,17 @@ func dbSetState(j string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(inRow.Name) < 1 || len (inRow.State) < 1 {
+	if len(inRow.Name) < 1 || len(inRow.State) < 1 {
 		log.Fatal(errSetState)
 	}
 	ws := prepareDB()
 	defer ws.Close()
 	err = ws.Set(map[string]interface{}{
-					"state": inRow.State,
-				},
-				map[string]interface{}{
-					"name": inRow.Name,
-				},
+		"state": inRow.State,
+	},
+		map[string]interface{}{
+			"name": inRow.Name,
+		},
 	)
 	if err != nil {
 		log.Fatal(err)
