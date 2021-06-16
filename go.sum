@@ -42,8 +42,8 @@ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.5.1 h1:nOGnQDM7FYENwehXlg/kFVnos3rEvtKTjRvOWSzb6H4=
 github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5cxcmMvtA=
 github.com/yandex-cloud/go-genproto v0.0.0-20210517152439-84c9ad4d8b5f/go.mod h1:HEUYX/p8966tMUHHT+TsS0hF/Ca/NYwqprC5WXSDMfE=
-github.com/yandex-cloud/go-genproto v0.0.0-20210525074622-76ddcd60f012 h1:lkBBHI5JeqefnDXso+hm9JE0NTHMeiXOefAbqvYScPQ=
-github.com/yandex-cloud/go-genproto v0.0.0-20210525074622-76ddcd60f012/go.mod h1:HEUYX/p8966tMUHHT+TsS0hF/Ca/NYwqprC5WXSDMfE=
+github.com/yandex-cloud/go-genproto v0.0.0-20210615100140-c0a72a663712 h1:UCMeA/ZM8gXV+adYjgV5RsFamCCFuFuGjxButAFVN7A=
+github.com/yandex-cloud/go-genproto v0.0.0-20210615100140-c0a72a663712/go.mod h1:HEUYX/p8966tMUHHT+TsS0hF/Ca/NYwqprC5WXSDMfE=
 github.com/yandex-cloud/go-sdk v0.0.0-20210517154707-ca282b96279e h1:Hg7VjYH4dekgjkuoYehD7gHRcSyQlPhHquECFHBjhG4=
 github.com/yandex-cloud/go-sdk v0.0.0-20210517154707-ca282b96279e/go.mod h1:SfHY/w/sP/zY/51XVAa6fEqi+eIvfIN9RbsL+6jJF/8=
 github.com/yandex-cloud/ydb-go-sdk v0.0.0-20210604133234-5ed66d3136bf h1:cjmeIyDLkbgzC1UmTuqWJl83qrIoAfANg+ZvuyfGdzA=

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/iam/v1"
+	"github.com/yandex-cloud/go-genproto/yandex/cloud/vpc/v1"
 	ydbv1 "github.com/yandex-cloud/go-genproto/yandex/cloud/ydb/v1"
 	ycsdk "github.com/yandex-cloud/go-sdk"
 	"log"
@@ -49,7 +50,7 @@ type sshConf struct {
 
 type ansibleGroup struct {
 	Hosts    []string               `json:"hosts,omitempty"`
-	Vars     map[string]string      `json:"vars,omitempty"`
+	Vars     map[string]interface{} `json:"vars,omitempty"`
 	HostVars map[string]ansibleVars `json:"hostvars,omitempty"`
 }
 
@@ -276,6 +277,18 @@ func newAnsibleInventory() (ansibleInventory, error) {
 	metaGroup := ansibleGroup{}
 	metaGroup.HostVars = ansibleMeta
 	ansibleInventory["_meta"] = metaGroup
+	// Add subnet vars to nat group
+	if natGroup, ok := ansibleInventory["nat"]; ok {
+		subnets, err := getSubnets(ctx, sdk, envs["FOLDER_ID"])
+		if err != nil {
+			return ansibleInventory, nil
+		}
+		var cidrBlocks []string
+		for _, s := range subnets {
+			cidrBlocks = append(cidrBlocks, s.V4CidrBlocks...)
+		}
+		natGroup.Vars["tf_subnets"] = cidrBlocks
+	}
 	return ansibleInventory, nil
 }
 
@@ -291,8 +304,8 @@ func ansibleHost(h string) {
 	fmt.Print(string(prepareBytes))
 }
 
-func renameLabels(prefix string, in map[string]string) map[string]string {
-	out := map[string]string{}
+func renameLabels(prefix string, in map[string]string) map[string]interface{} {
+	out := map[string]interface{}{}
 	for k, v := range in {
 		out[prefix+k] = v
 	}
@@ -300,9 +313,9 @@ func renameLabels(prefix string, in map[string]string) map[string]string {
 }
 
 // Given two maps, recursively merge right into left, NEVER replacing any key that already exists in left
-func mergeKeys(left, right map[string]string) map[string]string {
+func mergeKeys(left, right map[string]interface{}) map[string]interface{} {
 	if left == nil {
-		left = map[string]string{}
+		left = map[string]interface{}{}
 	}
 	if right == nil {
 		return left
@@ -317,28 +330,44 @@ func mergeKeys(left, right map[string]string) map[string]string {
 
 func getInstances(ctx context.Context, sdk *ycsdk.SDK, folderID string) ([]*compute.Instance, error) {
 	var instances []*compute.Instance
-	req := &compute.ListInstancesRequest{
-		FolderId: folderID,
-		PageSize: instancePerPage,
-	}
-	res, err := sdk.Compute().Instance().List(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	instances = res.Instances
-	for len(res.NextPageToken) > 0 {
-		req := &compute.ListInstancesRequest{
+	pageToken := ""
+	for {
+		resp, err := sdk.Compute().Instance().List(ctx, &compute.ListInstancesRequest{
 			FolderId:  folderID,
 			PageSize:  instancePerPage,
-			PageToken: res.NextPageToken,
-		}
-		res, err = sdk.Compute().Instance().List(ctx, req)
+			PageToken: pageToken,
+		})
 		if err != nil {
 			return nil, err
 		}
-		instances = append(instances, res.Instances...)
+		instances = append(instances, resp.Instances...)
+		pageToken = resp.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
 	}
 	return instances, nil
+}
+
+func getSubnets(ctx context.Context, sdk *ycsdk.SDK, folderID string) ([]*vpc.Subnet, error) {
+	subnets := []*vpc.Subnet{}
+	pageToken := ""
+	for {
+		resp, err := sdk.VPC().Subnet().List(ctx, &vpc.ListSubnetsRequest{
+			FolderId:  folderID,
+			PageSize:  instancePerPage,
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		subnets = append(subnets, resp.GetSubnets()...)
+		pageToken = resp.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
+	}
+	return subnets, nil
 }
 
 func getIAM() (string, error) {
