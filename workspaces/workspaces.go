@@ -189,9 +189,9 @@ func (y *YDBConn) Select(w map[string]interface{}) (*[]WsRow, error) {
 	where := mapToQuery(w, " AND ")
 	q := ""
 	if len(where) > 0 {
-		q = fmt.Sprintf("SELECT name,net_id,state,create_date,update_date FROM %s WHERE %s ;", y.TableName, where)
+		q = fmt.Sprintf("SELECT name,net_id,ha_mode,state,create_date,update_date FROM %s WHERE %s ;", y.TableName, where)
 	} else {
-		q = fmt.Sprintf("SELECT name,net_id,state,create_date,update_date FROM %s ;", y.TableName)
+		q = fmt.Sprintf("SELECT name,net_id,ha_mode,state,create_date,update_date FROM %s ;", y.TableName)
 	}
 
 	_, res, err := sess.Execute(y.CTX, readTx, q, nil)
@@ -205,6 +205,8 @@ func (y *YDBConn) Select(w map[string]interface{}) (*[]WsRow, error) {
 			tmpRow.Name = string(res.OString())
 			res.NextItem()
 			tmpRow.NetId = res.OUint32()
+			res.NextItem()
+			tmpRow.HaMode = res.OBool()
 			res.NextItem()
 			tmpRow.State = string(res.OString())
 			res.NextItem()
