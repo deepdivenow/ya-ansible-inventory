@@ -28,6 +28,7 @@ var (
 	errEnv          = errors.New("Env variable not set")
 	errDBnotFound   = errors.New("Database not found")
 	errSetState     = errors.New("Set state. Must set ws Name and ws State")
+	errNetNotFound  = errors.New("Network not found")
 )
 
 type argsT struct {
@@ -279,7 +280,7 @@ func newAnsibleInventory() (ansibleInventory, error) {
 	ansibleInventory["_meta"] = metaGroup
 	// Add subnet vars to nat group
 	if natGroup, ok := ansibleInventory["nat"]; ok {
-		subnets, err := getSubnets(ctx, sdk, envs["FOLDER_ID"])
+		subnets, err := getSubnets(ctx, sdk, envs)
 		if err != nil {
 			return ansibleInventory, nil
 		}
@@ -349,19 +350,55 @@ func getInstances(ctx context.Context, sdk *ycsdk.SDK, folderID string) ([]*comp
 	return instances, nil
 }
 
-func getSubnets(ctx context.Context, sdk *ycsdk.SDK, folderID string) ([]*vpc.Subnet, error) {
-	subnets := []*vpc.Subnet{}
+func getVPCid(ctx context.Context, sdk *ycsdk.SDK, envs map[string]string) (string, error) {
 	pageToken := ""
 	for {
+		resp, err := sdk.VPC().Network().List(ctx, &vpc.ListNetworksRequest{
+			FolderId:  envs["FOLDER_ID"],
+			PageSize:  instancePerPage,
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return "", err
+		}
+		for _,n := range resp.GetNetworks() {
+
+			if wsLabel,ok := n.Labels["workspace"]; ok {
+				if envs["WORKSPACE"] == wsLabel {
+					return n.Id, nil
+				}
+			}
+		}
+		//subnets = append(subnets, resp.GetSubnets()...)
+		pageToken = resp.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
+	}
+	return "",errNetNotFound
+}
+
+func getSubnets(ctx context.Context, sdk *ycsdk.SDK, envs map[string]string) ([]*vpc.Subnet, error) {
+	subnets := []*vpc.Subnet{}
+	pageToken := ""
+	netId,err := getVPCid(ctx,sdk,envs)
+	if err != nil {
+		return nil,err
+	}
+	for {
 		resp, err := sdk.VPC().Subnet().List(ctx, &vpc.ListSubnetsRequest{
-			FolderId:  folderID,
+			FolderId:  envs["FOLDER_ID"],
 			PageSize:  instancePerPage,
 			PageToken: pageToken,
 		})
 		if err != nil {
 			return nil, err
 		}
-		subnets = append(subnets, resp.GetSubnets()...)
+		for _,s := range resp.GetSubnets() {
+			if s.NetworkId == netId {
+				subnets = append(subnets, s)
+			}
+		}
 		pageToken = resp.GetNextPageToken()
 		if pageToken == "" {
 			break
