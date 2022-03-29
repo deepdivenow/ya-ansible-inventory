@@ -1,4 +1,4 @@
-package workspaces
+package ydb
 
 import (
 	"context"
@@ -25,15 +25,6 @@ type YDBConn struct {
 	Endpoint     string
 	CTX          context.Context
 	session      *table.Session
-}
-
-type WsRow struct {
-	Name       string    `json:"name"`
-	NetId      uint32    `json:"net_id"`
-	CreateDate time.Time `json:"create_date"`
-	UpdateDate time.Time `json:"update_date"`
-	State      string    `json:"state"`
-	HaMode     bool      `json:"ha_mode"`
 }
 
 func (y *YDBConn) Close() {

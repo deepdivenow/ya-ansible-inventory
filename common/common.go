@@ -21,8 +21,15 @@ func init() {
 }
 
 func StringDump(data interface{}) string {
-	b, _ := json.MarshalIndent(data, "", "  ")
-	return string(b)
+	s, _ := StringDumpErr(data)
+	return s
+}
+func StringDumpErr(data interface{}) (string, error) {
+	b, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 func StringClone(s string) string {
 	b := make([]byte, len(s))

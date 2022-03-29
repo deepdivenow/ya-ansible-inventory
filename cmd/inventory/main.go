@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 	cl "ya-ansible-inventory/cloud"
+	"ya-ansible-inventory/cloudDB"
 	ch "ya-ansible-inventory/cloudHelper"
 	"ya-ansible-inventory/common"
 )
@@ -20,9 +21,6 @@ var (
 	instancePerPage int64 = 256
 	args            argsT
 	errNat          = errors.New("Nat IP not found")
-	errDBnotFound   = errors.New("Database not found")
-	errSetState     = errors.New("Set state. Must set ws Name and ws State")
-	errNetNotFound  = errors.New("Network not found")
 )
 
 type argsT struct {
@@ -63,23 +61,54 @@ func main() {
 	flag.StringVar(&args.SshNatGroup, "ssh-nat-group", "nat", "Set nat group for ssh.conf")
 	flag.IntVar(&args.SshPort, "ssh-port", 22, "Set GW port for ssh.conf")
 	flag.Parse()
-
+	envLabels := []string{"CLOUD_TYPE"}
+	envs, err := common.CheckEnvs(envLabels)
+	if err != nil {
+		log.Fatal("You must set this ENVs: %s", strings.Join(envLabels, ", "))
+	}
 	if args.List {
 		ai, err := newAnsibleInventory()
 		if err != nil {
 			log.Fatal(err)
 		}
 		ai.print()
-	} else if args.DbList {
+	} else if args.DbList || len(args.DbCreate) > 0 || len(args.DbSet) > 0 {
 		//dbList()
-	} else if len(args.DbCreate) > 0 {
-		//dbCreate(args.DbCreate)
-	} else if len(args.DbSet) > 0 {
-		//dbSetState(args.DbSet)
+		cloud, err := ch.MakeCloud(envs["CLOUD_TYPE"])
+		if err != nil {
+			log.Fatal(err)
+		}
+		db, err := cloudDB.MakeCloudDB(cloud, envs["CLOUD_TYPE"])
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer db.Close()
+		if args.DbList {
+			err = db.List()
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else if len(args.DbCreate) > 0 {
+			err = db.Create(args.DbCreate)
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else if len(args.DbSet) > 0 {
+			err = db.SetState(args.DbSet)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 	} else if args.Ssh {
-		getSshConf()
+		err = getSshConf()
+		if err != nil {
+			log.Fatal(err)
+		}
 	} else if len(args.Host) > 0 {
-		ansibleHost(args.Host)
+		err = ansibleHost(args.Host)
+		if err != nil {
+			log.Fatal(err)
+		}
 	} else {
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -168,108 +197,35 @@ func newAnsibleInventory() (ansibleInventory, error) {
 	return ansibleInventory, nil
 }
 
-func ansibleHost(h string) {
+func ansibleHost(h string) error {
 	// Print default answer with meta
 	dump := `{"_meta": {"hostvars": {} } }`
 	var obj map[string]interface{}
 	json.Unmarshal([]byte(dump), &obj)
 	prepareBytes, err := json.MarshalIndent(obj, "", "  ")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	fmt.Print(string(prepareBytes))
+	return nil
 }
 
-//
-//func prepareDB() workspaces.YDBConn {
-//	db, err := getDB()
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	iam, err := getIAM()
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	return workspaces.YDBConn{
-//		DatabaseName: db.Name,
-//		TableName:    "main",
-//		IAMtoken:     iam,
-//		Endpoint:     db.Endpoint,
-//		CTX:          context.Background(),
-//	}
-//}
-//
-//func dbList() {
-//	ws := prepareDB()
-//	defer ws.Close()
-//	r, _ := ws.Select(nil)
-//	prepareBytes, err := json.MarshalIndent(r, "", "  ")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	fmt.Print(string(prepareBytes))
-//}
-//
-//func dbCreate(j string) {
-//	inRow := workspaces.WsRow{}
-//	err := json.Unmarshal([]byte(j), &inRow)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	inRow.State = "creating"
-//	inRow.CreateDate = time.Now()
-//	inRow.UpdateDate = time.Now()
-//	ws := prepareDB()
-//	defer ws.Close()
-//	err = ws.CreateTable()
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	err = ws.Insert(inRow)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//}
-//func dbSetState(j string) {
-//	inRow := workspaces.WsRow{}
-//	err := json.Unmarshal([]byte(j), &inRow)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	if len(inRow.Name) < 1 || len(inRow.State) < 1 {
-//		log.Fatal(errSetState)
-//	}
-//	ws := prepareDB()
-//	defer ws.Close()
-//	err = ws.Set(map[string]interface{}{
-//		"state": inRow.State,
-//	},
-//		map[string]interface{}{
-//			"name": inRow.Name,
-//		},
-//	)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//}
-//
-
-func getSshConf() {
+func getSshConf() error {
 	ai, err := newAnsibleInventory()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	natList, ok := ai[args.SshNatGroup]
 	if !ok {
-		log.Fatal(errNat)
+		return errNat
 	}
 	if len(natList.Hosts) < 1 {
-		log.Fatal(errNat)
+		return errNat
 	}
 	natHost := natList.Hosts[0]
 	natHostIp, ok := ai["_meta"].HostVars[natHost]["public_address"]
 	if !ok {
-		log.Fatal(errNat)
+		return errNat
 	}
 	conf := sshConf{
 		User:   args.SshUser,
@@ -278,10 +234,12 @@ func getSshConf() {
 	}
 	t, err := template.New("todos").Parse("Host *\n  User={{ .User }}\n  ProxyCommand=ssh -o StrictHostKeyChecking=no -q -W %h:%p {{ .User }}@{{ .GW }} -p{{ .GWPort }}\n")
 	if err != nil {
-		log.Fatal(err)
+		return err
+
 	}
 	err = t.Execute(os.Stdout, conf)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+	return nil
 }

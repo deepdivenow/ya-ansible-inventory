@@ -184,3 +184,8 @@ func (ca *CloudAWS) getSubNets() ([]*SubnetAWS, error) {
 	}
 	return result, nil
 }
+
+func (ca *CloudAWS) GetDBs(filter cloud.Filter) ([]cloud.CloudDB, error) {
+	//TODO implement me
+	panic("implement me")
+}

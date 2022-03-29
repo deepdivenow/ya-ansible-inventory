@@ -38,10 +38,31 @@ func (lf *LabelFilter) Check(i interface{}) bool {
 	return true
 }
 
+type NameChecker interface {
+	GetName() string
+}
+
+type NameFilter struct {
+	NameEqual string
+}
+
+func (nf *NameFilter) Check(i interface{}) bool {
+	obj, ok := i.(NameChecker)
+	if !ok {
+		return false
+	}
+	name := obj.GetName()
+	if strings.EqualFold(nf.NameEqual, name) {
+		return true
+	}
+	return false
+}
+
 type Cloud interface {
 	GetInstances(filter Filter) ([]Host, error)
 	GetVpcs(filter Filter) ([]VPC, error)
 	GetSubnets(filter Filter) ([]Subnet, error)
+	GetDBs(filter Filter) ([]CloudDB, error)
 }
 
 type Host interface {
@@ -70,5 +91,9 @@ type VPC interface {
 	GetLabels() map[string]string
 }
 
-type EnvState interface {
+type CloudDB interface {
+	GetName() string
+	GetId() string
+	GetLabels() map[string]string
+	GetEndpoint() string
 }

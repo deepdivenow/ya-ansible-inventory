@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/vpc/v1"
+	ydbv1 "github.com/yandex-cloud/go-genproto/yandex/cloud/ydb/v1"
 	ycsdk "github.com/yandex-cloud/go-sdk"
 	"strings"
 	"ya-ansible-inventory/cloud"
@@ -39,6 +40,7 @@ type CloudYandex struct {
 type HostYandex compute.Instance
 type VpcYandex vpc.Network
 type SubnetYandex vpc.Subnet
+type CloudDBYandex ydbv1.Database
 
 func (h *HostYandex) GetName() string {
 	return h.Name
@@ -97,6 +99,22 @@ func (s *SubnetYandex) GetVPCId() string {
 
 func (s *SubnetYandex) GetCidrs() []string {
 	return s.V4CidrBlocks
+}
+
+func (db *CloudDBYandex) GetName() string {
+	return db.Name
+}
+
+func (db *CloudDBYandex) GetId() string {
+	return db.Id
+}
+
+func (db *CloudDBYandex) GetLabels() map[string]string {
+	return db.Labels
+}
+
+func (db *CloudDBYandex) GetEndpoint() string {
+	return db.Endpoint
 }
 
 func (y *CloudYandex) GetInstances(filter cloud.Filter) ([]cloud.Host, error) {
@@ -225,73 +243,44 @@ func (y *CloudYandex) getSubNets() ([]*SubnetYandex, error) {
 	return result, nil
 }
 
-//
-//func getIAM() (string, error) {
-//	envLabels := []string{"YC_TOKEN"}
-//	envs, err := checkEnvs(envLabels)
-//	if err != nil {
-//		log.Fatal("You must set this ENVs: ", strings.Join(envLabels, ", "))
-//	}
-//	ctx := context.Background()
-//
-//	sdk, err := ycsdk.Build(ctx, ycsdk.Config{
-//		Credentials: ycsdk.OAuthToken(envs["YC_TOKEN"]),
-//	})
-//	if err != nil {
-//		return "", err
-//	}
-//	responce, err := sdk.IAM().IamToken().Create(ctx, &iam.CreateIamTokenRequest{Identity: &iam.CreateIamTokenRequest_YandexPassportOauthToken{YandexPassportOauthToken: envs["YC_TOKEN"]}})
-//	return responce.IamToken, err
-//}
-//
-//func getDB() (*ydbv1.Database, error) {
-//	envLabels := []string{"YC_TOKEN", "FOLDER_ID", "YC_DB"}
-//	envs, err := checkEnvs(envLabels)
-//	if err != nil {
-//		log.Fatal("You must set this ENVs: ", strings.Join(envLabels, ", "))
-//	}
-//	ctx := context.Background()
-//
-//	sdk, err := ycsdk.Build(ctx, ycsdk.Config{
-//		Credentials: ycsdk.OAuthToken(envs["YC_TOKEN"]),
-//	})
-//	if err != nil {
-//		return nil, err
-//	}
-//	ydbs, err := getYDBs(ctx, sdk, envs["FOLDER_ID"])
-//	if err != nil {
-//		return nil, err
-//	}
-//	for _, db := range ydbs {
-//		if db.Name == envs["YC_DB"] {
-//			return db, nil
-//		}
-//	}
-//	return nil, errDBnotFound
-//}
-//
-//func getYDBs(ctx context.Context, sdk *ycsdk.SDK, folderID string) ([]*ydbv1.Database, error) {
-//	var ydbs []*ydbv1.Database
-//	req := &ydbv1.ListDatabasesRequest{
-//		FolderId: folderID,
-//		PageSize: instancePerPage,
-//	}
-//	res, err := sdk.YDB().Database().List(ctx, req)
-//	if err != nil {
-//		return nil, err
-//	}
-//	ydbs = res.Databases
-//	for len(res.NextPageToken) > 0 {
-//		req := &ydbv1.ListDatabasesRequest{
-//			FolderId:  folderID,
-//			PageSize:  instancePerPage,
-//			PageToken: res.NextPageToken,
-//		}
-//		res, err := sdk.YDB().Database().List(ctx, req)
-//		if err != nil {
-//			return nil, err
-//		}
-//		ydbs = append(ydbs, res.Databases...)
-//	}
-//	return ydbs, nil
-//}
+func (y *CloudYandex) GetDBs(filter cloud.Filter) ([]cloud.CloudDB, error) {
+	dbs, err := y.getYDBs()
+	if err != nil {
+		return nil, err
+	}
+	if filter == nil {
+		filter = &cloud.DefaultFilter{}
+	}
+	var res []cloud.CloudDB
+	for _, db := range dbs {
+		if ok := filter.Check(db); ok {
+			res = append(res, db)
+		}
+	}
+	return res, nil
+}
+
+func (y *CloudYandex) getYDBs() ([]*CloudDBYandex, error) {
+	var result []*CloudDBYandex
+	ctx := context.TODO()
+	pageToken := ""
+	for {
+		resp, err := y.api.YDB().Database().List(ctx, &ydbv1.ListDatabasesRequest{
+			FolderId:  y.folderId,
+			PageSize:  instancePerPage,
+			PageToken: pageToken,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, db := range resp.Databases {
+			d := CloudDBYandex(*db)
+			result = append(result, &d)
+		}
+		pageToken = resp.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
+	}
+	return result, nil
+}
